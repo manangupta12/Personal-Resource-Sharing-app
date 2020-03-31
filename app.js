@@ -1,102 +1,64 @@
 const express = require("express");
-const path = require("path");
-const crypto = require("crypto");
 const mongoose = require("mongoose");
-const multer = require("multer");
-const GridFsStorage = require("multer-gridfs-storage");
-const Grid = require("gridfs-stream");
 const methodoverride = require("method-override");
 const bodyParser = require("body-parser");
-
+const passport = require("passport");
+const LocalStrategy = require("passport-local");
+const passportLocalMongoose = require("passport-local-mongoose");
+const flash   = require("connect-flash");
+const middleware = require("./middleware");
+const indexRoutes = require("./routes/index");
+const User = require("./models/user");
+const fileRoutes = require("./routes/file");
+//==============>>>> Setting up the app >>>>>>>>==============
 const app = express();
+const MongoClient = require('mongodb').MongoClient;
+const uri = "mongodb+srv://manan:manan@cluster0-yiw6j.mongodb.net/test?retryWrites=true&w=majority";
+MongoClient.connect(uri, function(err, client) {
+  if(err) {
+       console.log('Error occurred while connecting to MongoDB Atlas...\n',err);
+  }
+  console.log('Connected to MongoDB...');
+  const collection = client.db("test").collection("devices");
+  // perform actions on the collection object
+  client.close();
+});
+
+mongoose.connect(uri, {useNewUrlParser: true, useUnifiedTopology: true });
 
 
+app.use(require("express-session")({
+    secret: "I love my life !!",
+    resave : false,
+    saveUninitialized : false
+}));
+app.use(indexRoutes);
+app.use("/file",fileRoutes);
+app.use(passport.initialize());
+app.use(passport.session());
+passport.serializeUser(User.serializeUser());
+passport.deserializeUser(User.deserializeUser());
+passport.use(new LocalStrategy(User.authenticate()));
+app.use(function(req,res,next){
+    res.locals.files = false;
+    next();
+    });
+app.use(flash());
 app.set("view engine","ejs");
 //app.use(bodyParser.json);
 app.use(methodoverride("_method"));
 
+//====================MongoDb Atlas============================
 const mongoURI = "mongodb+srv://manan:manan@cluster0-yiw6j.mongodb.net/test?retryWrites=true&w=majority";
 
 const conn = mongoose.createConnection(mongoURI);
-
-let gfs;
-conn.once('open',()=>{
-    gfs = Grid(conn.db,mongoose.mongo);
-    gfs.collection("uploads");
-})
-
-const storage = new GridFsStorage({
-    url: mongoURI,
-    file: (req, file) => {
-      return new Promise((resolve, reject) => {
-        crypto.randomBytes(16, (err, buf) => {
-          if (err) {
-            return reject(err);
-          }
-          const filename = buf.toString('hex') + path.extname(file.originalname);
-          const fileInfo = {
-            filename: filename,
-            bucketName: 'uploads'
-          };
-          resolve(fileInfo);
-        });
-      });
-    }
-  });
-const upload = multer({ storage });
+//==============================================================
 
 
-app.get("/",function(req,res){
-    res.render("index")
-})
+// @route GET /
+// @desc Loads form
 
-app.post("/upload",upload.single("file"),function(req,res){
-    res.redirect("/");
-})
+app.get("")
+const port = 5000;
 
-app.get("/files",function(req,res){
-    gfs.files.find().toArray((err,files)=>{
-        if(!files || files.length===0){
-            return res.status(404).json({
-                err: "No files exists"
-            });
-        }
-        return res.json(files);
-    })
-});
-
-app.get("/files/:filename",function(req,res){
-    gfs.files.findOne({filename:req.params.filename},(err,file)=>{
-        if(!file || file.length===0){
-            return res.status(404).json({
-                err : "No file found"
-            })
-        }
-        return res.json(file);
-    });
-});
-
-app.get("/image/:filename",function(req,res){
-    gfs.files.findOne({filename:req.params.filename},(err,file)=>{
-        if(!file || file.length===0){
-            return res.status(404).json({
-                err : "No file found"
-            })
-        }
-        if(file.contentType==="image/png" || file.contentType==="image/jpeg"){
-            const readstream = gfs.createReadStream(file.filename);
-            readstream.pipe(res);
-        }
-        else{
-            res.status(404).json()({
-                err : "Not an Image"
-            });
-        }
-    });
-});
-
-
-
-app.listen(8000,function(err){
-    console.log("Server running at 8000 !!")
-})
+app.listen(port, () => console.log(`Server started on port ${port}`));
